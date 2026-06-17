@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Stop the Clock</title>
+<meta name="description" content="Tap to stop the timer exactly on target — solo, or party mode where you guess by ear." />
+<meta name="theme-color" content="#0b0f14" />
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --line:#1e2937;
+    --green:#22c55e; --green-dk:#15803d;
+    --red:#ef4444; --red-dk:#b91c1c;
+    --blue:#3b82f6; --blue-dk:#1d4ed8;
+    --text:#e8eef5; --muted:#8b9bb0; --gold:#fbbf24;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 800px at 50% -10%, #16202c 0%, var(--bg) 60%);
+    color:var(--text);min-height:100dvh;margin:0;
+    -webkit-user-select:none;user-select:none;
+  }
+  .screen{
+    display:none;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100dvh;padding:24px;gap:18px;text-align:center;
+  }
+  .screen.active{display:flex;}
+  h1{font-size:1.5rem;font-weight:800;letter-spacing:.5px;margin:0;}
+  h2{font-size:1.15rem;font-weight:800;letter-spacing:.5px;margin:0;}
+  .sub{color:var(--muted);font-size:.95rem;margin:-6px 0 0;max-width:340px;}
+  .target{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 18px;font-size:1rem;color:var(--muted);}
+  .target b{color:var(--gold);font-size:1.15rem;font-variant-numeric:tabular-nums;}
+  .clock{font-size:clamp(3rem,16vw,6rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:1px;transition:color .15s ease;}
+  .clock.win{color:var(--green);} .clock.close{color:var(--gold);} .clock.miss{color:var(--red);}
+  .btn{
+    appearance:none;border:none;cursor:pointer;color:#06210f;
+    width:min(74vw,300px);height:min(74vw,300px);max-height:44dvh;
+    border-radius:50%;font-size:1.9rem;font-weight:900;letter-spacing:2px;
+    background:radial-gradient(circle at 35% 30%, #4ade80, var(--green) 55%, var(--green-dk));
+    box-shadow:0 18px 40px rgba(34,197,94,.35), inset 0 -8px 20px rgba(0,0,0,.25);
+    transition:transform .06s ease, box-shadow .15s ease, background .15s ease;
+    touch-action:manipulation;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn.stop{color:#2a0707;background:radial-gradient(circle at 35% 30%, #f87171, var(--red) 55%, var(--red-dk));box-shadow:0 18px 40px rgba(239,68,68,.35), inset 0 -8px 20px rgba(0,0,0,.25);}
+  .menu-btn{
+    appearance:none;border:1px solid var(--line);cursor:pointer;
+    width:min(86vw,360px);padding:20px;border-radius:18px;background:var(--panel);
+    color:var(--text);font-size:1.1rem;font-weight:800;letter-spacing:.5px;text-align:left;
+    display:flex;flex-direction:column;gap:4px;transition:transform .06s ease, border-color .15s;
+  }
+  .menu-btn:active{transform:scale(.985);}
+  .menu-btn small{font-weight:500;color:var(--muted);font-size:.85rem;}
+  .menu-btn .ic{font-size:1.4rem;}
+  .pill{
+    appearance:none;border:1px solid var(--line);cursor:pointer;background:var(--panel);
+    color:var(--text);padding:12px 22px;border-radius:999px;font-size:1rem;font-weight:700;
+    touch-action:manipulation;transition:transform .06s ease;
+  }
+  .pill:active{transform:scale(.97);}
+  .pill.primary{background:var(--green);border-color:var(--green);color:#06210f;}
+  .pill.blue{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .pill.ghost{background:transparent;}
+  .result{min-height:1.4rem;font-size:1.05rem;font-weight:700;}
+  .result .ms{color:var(--muted);font-weight:500;font-size:.9rem;}
+  .stats{display:flex;gap:22px;color:var(--muted);font-size:.85rem;}
+  .stats b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .back{position:fixed;top:14px;left:14px;background:transparent;border:none;color:var(--muted);font-size:.95rem;cursor:pointer;padding:6px 8px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  input[type="text"],input[type="number"]{
+    background:#0e141d;border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:13px 14px;font-size:1rem;outline:none;
+  }
+  input:focus{border-color:var(--blue);}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;width:min(92vw,420px);}
+  .guess-list{list-style:none;margin:10px 0 0;padding:0;width:min(92vw,420px);display:flex;flex-direction:column;gap:8px;}
+  .guess-list li{display:flex;justify-content:space-between;align-items:center;background:#0e141d;border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:1rem;}
+  .guess-list li .nm{font-weight:700;}
+  .guess-list li .gv{color:var(--muted);font-variant-numeric:tabular-nums;}
+  .guess-list li .x{color:#4b5b70;cursor:pointer;font-size:1.2rem;padding:0 4px;}
+  .rank li{display:flex;justify-content:space-between;align-items:center;background:#0e141d;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:1rem;}
+  .rank li.w{border-color:var(--gold);background:rgba(251,191,36,.08);}
+  .rank .pos{color:var(--muted);width:26px;text-align:left;}
+  .rank .off{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.9rem;}
+  .big-reveal{font-size:clamp(2.6rem,14vw,5rem);font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;}
+  .hint{color:#42526a;font-size:.78rem;max-width:320px;}
+  .foot{position:fixed;bottom:10px;color:#42526a;font-size:.72rem;}
+</style>
+</head>
+<body>
+
+<!-- ===== HOME ===== -->
+<section id="home" class="screen active">
+  <h1>STOP THE CLOCK</h1>
+  <p class="sub">Tap to stop the timer exactly on target. Two ways to play.</p>
+  <button class="menu-btn" data-go="solo">
+    <span class="ic">🎯 Solo Challenge</span>
+    <small>Stop the visible timer as close to the target as you can.</small>
+  </button>
+  <button class="menu-btn" data-go="party">
+    <span class="ic">🎧 Party Mode</span>
+    <small>One "master" starts &amp; stops. Everyone else guesses the time — by ear.</small>
+  </button>
+  <div class="foot">No sign-up • works offline • pass-and-play</div>
+</section>
+
+<!-- ===== SOLO ===== -->
+<section id="solo" class="screen">
+  <button class="back" data-go="home">‹ Menu</button>
+  <h2>SOLO CHALLENGE</h2>
+  <div class="target">Target: <b id="s_target">10.00</b> s</div>
+  <div class="clock" id="s_clock">0.00</div>
+  <button class="btn" id="s_btn">START</button>
+  <div class="result" id="s_result">Press START to begin</div>
+  <div class="stats">
+    <div>Best: <b id="s_best">—</b></div>
+    <div>Streak: <b id="s_streak">0</b></div>
+    <div>Plays: <b id="s_plays">0</b></div>
+  </div>
+  <div class="foot">Get within 0.05s to win • new target each round</div>
+</section>
+
+<!-- ===== PARTY ===== -->
+<section id="party" class="screen">
+  <button class="back" data-go="home">‹ Menu</button>
+
+  <!-- step: run (master) -->
+  <div id="p_run" class="row" style="flex-direction:column;align-items:center;gap:18px;">
+    <h2>🎧 PARTY MODE</h2>
+    <p class="sub">Master: tap to start, then tap to stop. Everyone listens for the two clicks — the time stays hidden. Then pass the phone around for guesses.</p>
+    <div class="clock" id="p_clock">●</div>
+    <button class="btn" id="p_btn">START</button>
+    <div class="result" id="p_status">Master, tap START when ready</div>
+  </div>
+
+  <!-- step: guesses -->
+  <div id="p_guess" style="display:none;flex-direction:column;align-items:center;gap:14px;">
+    <h2>How long was it?</h2>
+    <p class="sub">Each player taps in a guess in seconds. The time is hidden until everyone's in.</p>
+    <div class="card">
+      <div class="row">
+        <input type="text" id="p_name" placeholder="Name" style="flex:1;min-width:120px;" autocomplete="off" />
+        <input type="number" id="p_val" placeholder="Seconds" step="0.01" min="0" inputmode="decimal" style="width:120px;" />
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="pill blue" id="p_add">+ Add guess</button>
+      </div>
+    </div>
+    <ul class="guess-list" id="p_list"></ul>
+    <div class="row">
+      <button class="pill primary" id="p_reveal">Reveal &amp; rank</button>
+    </div>
+    <p class="hint" id="p_count">No guesses yet</p>
+  </div>
+
+  <!-- step: reveal -->
+  <div id="p_result" style="display:none;flex-direction:column;align-items:center;gap:14px;">
+    <h2>It was…</h2>
+    <div class="big-reveal" id="p_actual">0.00s</div>
+    <ul class="guess-list rank" id="p_rank" style="margin-top:4px;"></ul>
+    <div class="row">
+      <button class="pill primary" id="p_again">Play again</button>
+      <button class="pill ghost" data-go="home">Menu</button>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  // ---------- shared click sound ----------
+  var actx=null;
+  function click(freq){
+    try{
+      if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+      if(actx.state==='suspended') actx.resume();
+      var t=actx.currentTime;
+      var o=actx.createOscillator(), g=actx.createGain();
+      o.type='square'; o.frequency.value=freq||880;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.3,t+0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.07);
+      o.connect(g); g.connect(actx.destination);
+      o.start(t); o.stop(t+0.08);
+    }catch(e){}
+  }
+  function fmt(s){ return s.toFixed(2); }
+  function $(id){ return document.getElementById(id); }
+
+  // ---------- navigation ----------
+  function show(id){
+    var arr=document.querySelectorAll('.screen');
+    for(var i=0;i<arr.length;i++) arr[i].classList.remove('active');
+    $(id).classList.add('active');
+    if(id==='party') resetParty();
+  }
+  document.addEventListener('click', function(e){
+    var t=e.target.closest('[data-go]');
+    if(t){ show(t.getAttribute('data-go')); }
+  });
+
+  /* ================= SOLO ================= */
+  (function(){
+    var TARGETS=[10.00,5.00,7.00,3.00,15.00,20.00];
+    var state='idle', startTime=0, raf=0, target=10.00;
+    var best=null, streak=0, plays=0;
+    var clockEl=$('s_clock'), btn=$('s_btn'), resultEl=$('s_result');
+
+    function pick(){ target=TARGETS[Math.floor(Math.random()*TARGETS.length)]; $('s_target').textContent=target.toFixed(2); }
+    function tick(){ clockEl.textContent=fmt((performance.now()-startTime)/1000); raf=requestAnimationFrame(tick); }
+
+    function start(){
+      click(1040); state='running'; clockEl.className='clock'; btn.textContent='STOP'; btn.classList.add('stop');
+      resultEl.innerHTML='Stop at <b style="color:var(--gold)">'+target.toFixed(2)+'</b>…';
+      startTime=performance.now(); raf=requestAnimationFrame(tick);
+    }
+    function stop(){
+      click(660); cancelAnimationFrame(raf); state='done';
+      var el=(performance.now()-startTime)/1000; clockEl.textContent=fmt(el);
+      var diff=el-target, ad=Math.abs(diff); plays++; $('s_plays').textContent=plays;
+      var sign=diff>=0?'+':'−', msg, cls;
+      if(ad<=0.05){ msg='🎯 PERFECT!'; cls='win'; streak++; }
+      else if(ad<=0.20){ msg='🔥 So close!'; cls='close'; streak=0; }
+      else if(ad<=0.60){ msg=(diff>0?'Too slow':'Too fast'); cls='miss'; streak=0; }
+      else { msg=(diff>0?'Way too slow':'Way too fast'); cls='miss'; streak=0; }
+      clockEl.className='clock '+cls;
+      resultEl.innerHTML=msg+' <span class="ms">'+sign+ad.toFixed(2)+'s off</span>';
+      $('s_streak').textContent=streak;
+      if(best===null||ad<best){ best=ad; $('s_best').textContent=best.toFixed(2)+'s'; }
+      btn.textContent='PLAY AGAIN'; btn.classList.remove('stop');
+    }
+    function next(){ pick(); clockEl.textContent='0.00'; clockEl.className='clock'; resultEl.textContent='Press START to begin'; btn.textContent='START'; state='idle'; }
+    function handle(e){ if(e&&e.preventDefault)e.preventDefault(); if(state==='idle')start(); else if(state==='running')stop(); else next(); }
+    btn.addEventListener('click', handle);
+    document.addEventListener('keydown', function(e){
+      if($('solo').classList.contains('active') && (e.code==='Space'||e.code==='Enter')){ e.preventDefault(); handle(e); }
+    });
+    pick();
+  })();
+
+  /* ================= PARTY ================= */
+  var p={state:'idle', startTime:0, raf:0, actual:0, guesses:[]};
+  var pClock=$('p_clock'), pBtn=$('p_btn'), pStatus=$('p_status');
+
+  function pPulse(){ // subtle running indicator, no numbers
+    pClock.textContent = (Math.floor((performance.now()-p.startTime)/350)%2) ? '◉' : '○';
+    p.raf=requestAnimationFrame(pPulse);
+  }
+  function pStart(){
+    click(1040); p.state='running'; pBtn.textContent='STOP'; pBtn.classList.add('stop');
+    pStatus.textContent='Running… listen for the next click. Tap STOP.';
+    p.startTime=performance.now(); p.raf=requestAnimationFrame(pPulse);
+  }
+  function pStop(){
+    click(660); cancelAnimationFrame(p.raf); p.state='done';
+    p.actual=(performance.now()-p.startTime)/1000;
+    pClock.textContent='●';
+    goStep('guess');
+  }
+  function pHandle(e){
+    if(e&&e.preventDefault)e.preventDefault();
+    if(p.state==='idle') pStart();
+    else if(p.state==='running') pStop();
+  }
+  pBtn.addEventListener('click', pHandle);
+  document.addEventListener('keydown', function(e){
+    if($('party').classList.contains('active') && $('p_run').style.display!=='none'
+        && (e.code==='Space'||e.code==='Enter')){ e.preventDefault(); pHandle(e); }
+  });
+
+  function goStep(step){
+    $('p_run').style.display = step==='run' ? 'flex':'none';
+    $('p_guess').style.display = step==='guess' ? 'flex':'none';
+    $('p_result').style.display = step==='result' ? 'flex':'none';
+  }
+
+  function renderGuesses(){
+    var ul=$('p_list'); ul.innerHTML='';
+    p.guesses.forEach(function(g,i){
+      var li=document.createElement('li');
+      li.innerHTML='<span class="nm">'+escapeHtml(g.name)+'</span>'+
+                   '<span><span class="gv">'+g.val.toFixed(2)+'s</span> '+
+                   '<span class="x" data-rm="'+i+'">×</span></span>';
+      ul.appendChild(li);
+    });
+    $('p_count').textContent = p.guesses.length ? (p.guesses.length+' guess'+(p.guesses.length>1?'es':'')+' in') : 'No guesses yet';
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+  $('p_list').addEventListener('click', function(e){
+    var x=e.target.closest('[data-rm]');
+    if(x){ p.guesses.splice(parseInt(x.getAttribute('data-rm'),10),1); renderGuesses(); }
+  });
+
+  function addGuess(){
+    var nameEl=$('p_name'), valEl=$('p_val');
+    var val=parseFloat(valEl.value);
+    if(isNaN(val)||val<0){ valEl.focus(); return; }
+    var name=(nameEl.value||'').trim() || ('Player '+(p.guesses.length+1));
+    p.guesses.push({name:name, val:val});
+    nameEl.value=''; valEl.value=''; nameEl.focus();
+    click(820);
+    renderGuesses();
+  }
+  $('p_add').addEventListener('click', addGuess);
+  $('p_val').addEventListener('keydown', function(e){ if(e.code==='Enter') addGuess(); });
+
+  $('p_reveal').addEventListener('click', function(){
+    if(!p.guesses.length){ $('p_count').textContent='Add at least one guess first.'; return; }
+    var actual=p.actual;
+    var ranked=p.guesses.map(function(g){ return {name:g.name, val:g.val, off:Math.abs(g.val-actual)}; })
+                        .sort(function(a,b){ return a.off-b.off; });
+    $('p_actual').textContent=actual.toFixed(2)+'s';
+    var ul=$('p_rank'); ul.innerHTML='';
+    ranked.forEach(function(r,i){
+      var li=document.createElement('li');
+      if(i===0) li.className='w';
+      var medal = i===0?'🏆':(i+1);
+      li.innerHTML='<span class="pos">'+medal+'</span>'+
+                   '<span class="nm">'+escapeHtml(r.name)+'</span>'+
+                   '<span class="off">'+r.val.toFixed(2)+'s · '+(r.off<=0.001?'spot on':('±'+r.off.toFixed(2)+'s'))+'</span>';
+      ul.appendChild(li);
+    });
+    goStep('result');
+  });
+
+  $('p_again').addEventListener('click', resetParty);
+
+  function resetParty(){
+    p.state='idle'; p.actual=0; p.guesses=[];
+    cancelAnimationFrame(p.raf);
+    pClock.textContent='●'; pBtn.textContent='START'; pBtn.classList.remove('stop');
+    pStatus.textContent='Master, tap START when ready';
+    $('p_name').value=''; $('p_val').value='';
+    renderGuesses();
+    goStep('run');
+  }
+  resetParty();
+
+})();
+</script>
+</body>
+</html>
