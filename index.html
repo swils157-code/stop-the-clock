@@ -126,33 +126,42 @@
 <section id="party" class="screen">
   <button class="back" data-go="home">‹ Menu</button>
 
+  <!-- step: roster (sign in once) -->
+  <div id="p_roster" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+    <h2>🎧 Who's playing?</h2>
+    <p class="sub">Add everyone once — names stick for the rest of your visit. Each round you'll just enter their guesses.</p>
+    <div class="card">
+      <div class="row">
+        <input type="text" id="r_name" placeholder="Player name" style="flex:1;min-width:160px;" autocomplete="off" />
+        <button class="pill blue" id="r_add">+ Add</button>
+      </div>
+    </div>
+    <ul class="guess-list" id="r_list"></ul>
+    <div class="row">
+      <button class="pill primary" id="r_start">Start game ›</button>
+    </div>
+    <p class="hint" id="r_count">No players yet</p>
+  </div>
+
   <!-- step: run (master) -->
-  <div id="p_run" class="row" style="flex-direction:column;align-items:center;gap:18px;">
+  <div id="p_run" style="display:none;flex-direction:column;align-items:center;gap:18px;">
     <h2>🎧 PARTY MODE</h2>
-    <p class="sub">Master: tap to start, then tap to stop. Everyone listens for the two clicks — the time stays hidden. Then pass the phone around for guesses.</p>
+    <p class="sub">Master: tap to start, then tap to stop. Everyone listens for the two clicks — the time stays hidden.</p>
     <div class="clock" id="p_clock">●</div>
     <button class="btn" id="p_btn">START</button>
     <div class="result" id="p_status">Master, tap START when ready</div>
+    <button class="pill ghost" id="p_edit">Edit players</button>
   </div>
 
   <!-- step: guesses -->
   <div id="p_guess" style="display:none;flex-direction:column;align-items:center;gap:14px;">
     <h2>How long was it?</h2>
-    <p class="sub">Each player taps in a guess in seconds. The time is hidden until everyone's in.</p>
-    <div class="card">
-      <div class="row">
-        <input type="text" id="p_name" placeholder="Name" style="flex:1;min-width:120px;" autocomplete="off" />
-        <input type="number" id="p_val" placeholder="Seconds" step="0.01" min="0" inputmode="decimal" style="width:120px;" />
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button class="pill blue" id="p_add">+ Add guess</button>
-      </div>
-    </div>
-    <ul class="guess-list" id="p_list"></ul>
+    <p class="sub">Enter each player's guess in seconds. The time stays hidden until you reveal.</p>
+    <ul class="guess-list" id="p_inputs"></ul>
     <div class="row">
       <button class="pill primary" id="p_reveal">Reveal &amp; rank</button>
     </div>
-    <p class="hint" id="p_count">No guesses yet</p>
+    <p class="hint" id="p_count">&nbsp;</p>
   </div>
 
   <!-- step: reveal -->
@@ -162,6 +171,7 @@
     <ul class="guess-list rank" id="p_rank" style="margin-top:4px;"></ul>
     <div class="row">
       <button class="pill primary" id="p_again">Play again</button>
+      <button class="pill ghost" id="p_editfromresult">Edit players</button>
       <button class="pill ghost" data-go="home">Menu</button>
     </div>
   </div>
@@ -202,12 +212,12 @@
 
   /* ================= SOLO ================= */
   (function(){
-    var TARGETS=[10.00,5.00,7.00,3.00,15.00,20.00];
-    var state='idle', startTime=0, raf=0, target=10.00;
+    var state='idle', startTime=0, raf=0, target=5.00;
     var best=null, streak=0, plays=0;
     var clockEl=$('s_clock'), btn=$('s_btn'), resultEl=$('s_result');
 
-    function pick(){ target=TARGETS[Math.floor(Math.random()*TARGETS.length)]; $('s_target').textContent=target.toFixed(2); }
+    // random target between 1.00 and 10.00, to the hundredth
+    function pick(){ target=(Math.floor(Math.random()*901)+100)/100; $('s_target').textContent=target.toFixed(2); }
     function tick(){ clockEl.textContent=fmt((performance.now()-startTime)/1000); raf=requestAnimationFrame(tick); }
 
     function start(){
@@ -240,10 +250,53 @@
   })();
 
   /* ================= PARTY ================= */
-  var p={state:'idle', startTime:0, raf:0, actual:0, guesses:[]};
+  var ROSTER_KEY='stc_roster';
+  var p={state:'idle', startTime:0, raf:0, actual:0};
+  var roster=[]; // player names, persisted for the visit
+  try{ var saved=sessionStorage.getItem(ROSTER_KEY); if(saved) roster=JSON.parse(saved)||[]; }catch(e){}
   var pClock=$('p_clock'), pBtn=$('p_btn'), pStatus=$('p_status');
 
-  function pPulse(){ // subtle running indicator, no numbers
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function saveRoster(){ try{ sessionStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); }catch(e){} }
+
+  function goStep(step){
+    $('p_roster').style.display = step==='roster' ? 'flex':'none';
+    $('p_run').style.display    = step==='run'    ? 'flex':'none';
+    $('p_guess').style.display  = step==='guess'  ? 'flex':'none';
+    $('p_result').style.display = step==='result' ? 'flex':'none';
+  }
+
+  /* ---- roster (sign in once, kept for the visit) ---- */
+  function renderRoster(){
+    var ul=$('r_list'); ul.innerHTML='';
+    roster.forEach(function(name,i){
+      var li=document.createElement('li');
+      li.innerHTML='<span class="nm">'+escapeHtml(name)+'</span>'+
+                   '<span class="x" data-rrm="'+i+'">×</span>';
+      ul.appendChild(li);
+    });
+    $('r_count').textContent = roster.length ? (roster.length+' player'+(roster.length>1?'s':'')+' signed in') : 'No players yet';
+  }
+  function addPlayer(){
+    var el=$('r_name'); var name=(el.value||'').trim();
+    if(!name){ el.focus(); return; }
+    roster.push(name); saveRoster(); el.value=''; el.focus(); click(820); renderRoster();
+  }
+  $('r_add').addEventListener('click', addPlayer);
+  $('r_name').addEventListener('keydown', function(e){ if(e.code==='Enter') addPlayer(); });
+  $('r_list').addEventListener('click', function(e){
+    var x=e.target.closest('[data-rrm]');
+    if(x){ roster.splice(parseInt(x.getAttribute('data-rrm'),10),1); saveRoster(); renderRoster(); }
+  });
+  $('r_start').addEventListener('click', function(){
+    if(!roster.length){ $('r_count').textContent='Add at least one player first.'; return; }
+    startRound();
+  });
+  $('p_edit').addEventListener('click', function(){ renderRoster(); goStep('roster'); });
+  $('p_editfromresult').addEventListener('click', function(){ renderRoster(); goStep('roster'); });
+
+  /* ---- the run (master, hidden timer) ---- */
+  function pPulse(){
     pClock.textContent = (Math.floor((performance.now()-p.startTime)/350)%2) ? '◉' : '○';
     p.raf=requestAnimationFrame(pPulse);
   }
@@ -256,6 +309,7 @@
     click(660); cancelAnimationFrame(p.raf); p.state='done';
     p.actual=(performance.now()-p.startTime)/1000;
     pClock.textContent='●';
+    renderGuessInputs();
     goStep('guess');
   }
   function pHandle(e){
@@ -269,51 +323,38 @@
         && (e.code==='Space'||e.code==='Enter')){ e.preventDefault(); pHandle(e); }
   });
 
-  function goStep(step){
-    $('p_run').style.display = step==='run' ? 'flex':'none';
-    $('p_guess').style.display = step==='guess' ? 'flex':'none';
-    $('p_result').style.display = step==='result' ? 'flex':'none';
+  function startRound(){
+    p.state='idle'; p.actual=0; cancelAnimationFrame(p.raf);
+    pClock.textContent='●'; pBtn.textContent='START'; pBtn.classList.remove('stop');
+    pStatus.textContent='Master, tap START when ready';
+    goStep('run');
   }
 
-  function renderGuesses(){
-    var ul=$('p_list'); ul.innerHTML='';
-    p.guesses.forEach(function(g,i){
+  /* ---- guesses (one field per signed-in player) ---- */
+  function renderGuessInputs(){
+    var ul=$('p_inputs'); ul.innerHTML='';
+    roster.forEach(function(name,i){
       var li=document.createElement('li');
-      li.innerHTML='<span class="nm">'+escapeHtml(g.name)+'</span>'+
-                   '<span><span class="gv">'+g.val.toFixed(2)+'s</span> '+
-                   '<span class="x" data-rm="'+i+'">×</span></span>';
+      li.innerHTML='<span class="nm">'+escapeHtml(name)+'</span>'+
+                   '<input type="number" step="0.01" min="0" inputmode="decimal" placeholder="sec" data-gi="'+i+'" style="width:104px;text-align:right;" />';
       ul.appendChild(li);
     });
-    $('p_count').textContent = p.guesses.length ? (p.guesses.length+' guess'+(p.guesses.length>1?'es':'')+' in') : 'No guesses yet';
+    $('p_count').innerHTML='&nbsp;';
+    var first=ul.querySelector('input'); if(first) first.focus();
   }
-  function escapeHtml(s){ return s.replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-
-  $('p_list').addEventListener('click', function(e){
-    var x=e.target.closest('[data-rm]');
-    if(x){ p.guesses.splice(parseInt(x.getAttribute('data-rm'),10),1); renderGuesses(); }
-  });
-
-  function addGuess(){
-    var nameEl=$('p_name'), valEl=$('p_val');
-    var val=parseFloat(valEl.value);
-    if(isNaN(val)||val<0){ valEl.focus(); return; }
-    var name=(nameEl.value||'').trim() || ('Player '+(p.guesses.length+1));
-    p.guesses.push({name:name, val:val});
-    nameEl.value=''; valEl.value=''; nameEl.focus();
-    click(820);
-    renderGuesses();
-  }
-  $('p_add').addEventListener('click', addGuess);
-  $('p_val').addEventListener('keydown', function(e){ if(e.code==='Enter') addGuess(); });
-
   $('p_reveal').addEventListener('click', function(){
-    if(!p.guesses.length){ $('p_count').textContent='Add at least one guess first.'; return; }
-    var actual=p.actual;
-    var ranked=p.guesses.map(function(g){ return {name:g.name, val:g.val, off:Math.abs(g.val-actual)}; })
-                        .sort(function(a,b){ return a.off-b.off; });
-    $('p_actual').textContent=actual.toFixed(2)+'s';
+    var inputs=$('p_inputs').querySelectorAll('input[data-gi]');
+    var entries=[];
+    inputs.forEach(function(inp){
+      var v=parseFloat(inp.value);
+      if(isNaN(v)||v<0) return;
+      entries.push({name:roster[parseInt(inp.getAttribute('data-gi'),10)], val:v, off:Math.abs(v-p.actual)});
+    });
+    if(!entries.length){ $('p_count').textContent='Enter at least one guess.'; return; }
+    entries.sort(function(a,b){ return a.off-b.off; });
+    $('p_actual').textContent=p.actual.toFixed(2)+'s';
     var ul=$('p_rank'); ul.innerHTML='';
-    ranked.forEach(function(r,i){
+    entries.forEach(function(r,i){
       var li=document.createElement('li');
       if(i===0) li.className='w';
       var medal = i===0?'🏆':(i+1);
@@ -324,17 +365,12 @@
     });
     goStep('result');
   });
-
-  $('p_again').addEventListener('click', resetParty);
+  $('p_again').addEventListener('click', startRound);
 
   function resetParty(){
-    p.state='idle'; p.actual=0; p.guesses=[];
-    cancelAnimationFrame(p.raf);
-    pClock.textContent='●'; pBtn.textContent='START'; pBtn.classList.remove('stop');
-    pStatus.textContent='Master, tap START when ready';
-    $('p_name').value=''; $('p_val').value='';
-    renderGuesses();
-    goStep('run');
+    renderRoster();
+    if(roster.length){ startRound(); }   // group already signed in this visit
+    else { goStep('roster'); }
   }
   resetParty();
 
